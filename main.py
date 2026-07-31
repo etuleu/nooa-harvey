@@ -15,7 +15,8 @@ from xml.sax.saxutils import escape as xml_escape
 
 from dotenv import load_dotenv
 
-from nooa import Agent
+from nooa import Agent, CodeActStrategy, strategy
+from nooa.config.strategy_config import CodeActConfig
 from nooa.unifiedllm.registry import get_llm_client
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -31,10 +32,10 @@ def configure_logging(verbose: bool) -> None:
         datefmt="%H:%M:%S",
     )
 
-    # LiteLLM (used internally by nooa's LLM client) logs verbosely at INFO/DEBUG
-    # regardless of our own level; keep it quiet unless it's a real problem.
+    # litellm is dumb
     for noisy_logger in ("LiteLLM", "LiteLLM Router", "LiteLLM Proxy", "httpx", "httpcore"):
         logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 
 DEFAULT_MODEL = "anthropic/claude-sonnet-5"
@@ -430,6 +431,7 @@ class HarveyBenchmarkAgent(Agent):
         logger.info("Harvey CLI completed in %.2fs: %s", elapsed, " ".join(command))
         return result.stdout
 
+    @strategy(CodeActStrategy(config=CodeActConfig(max_iterations=200)))
     async def solve_harvey_task(self) -> str:
         """Solve the assigned Harvey task end to end. Call task_context() first to read the instructions, work type, and required deliverables. Use glob() and read() to inspect documents/ (a .docx source may need read() which auto-extracts its text). Use write() to create each required deliverable under output/<filename>, and edit() or bash() as needed to refine files. Return a short summary of what was produced and which deliverables were written."""
         ...
@@ -468,12 +470,37 @@ class HarveyBenchmarkAgent(Agent):
         ...
 
 
-def _build_agent(harvey_path: Path, task: str, run_id: str, model: str) -> HarveyBenchmarkAgent:
+def load_system_prompt_override(path: str | None) -> str | None:
+    """Load a GEPA-optimized system prompt candidate (see optimize_prompt.py) from a JSON file.
+
+    Expects an object with a ``system_prompt`` string key. Task instructions come from
+    the task itself (via task_context()) and are not overridable.
+    """
+    if not path:
+        return None
+    payload = json.loads(Path(path).expanduser().resolve().read_text(encoding="utf-8"))
+    system_prompt = payload.get("system_prompt")
+    if not system_prompt:
+        raise ValueError(f"No usable system_prompt found in {path}")
+    return system_prompt
+
+
+def _build_agent(
+    harvey_path: Path,
+    task: str,
+    run_id: str,
+    model: str,
+    system_prompt: str | None = None,
+) -> HarveyBenchmarkAgent:
     logger.info("Building agent: task=%s model=%s run_id=%s", task, model, run_id)
     llm = get_llm_client(model)
 
     class ConcreteHarveyBenchmarkAgent(HarveyBenchmarkAgent, llm=llm):
         pass
+
+    if system_prompt:
+        ConcreteHarveyBenchmarkAgent.__doc__ = system_prompt
+        logger.info("Applied GEPA-optimized system prompt override")
 
     agent = ConcreteHarveyBenchmarkAgent()
     agent.harvey_path = harvey_path
@@ -493,7 +520,10 @@ def run_task(args: argparse.Namespace) -> None:
     harvey_path = resolve_harvey_path(args.harvey_path)
     logger.info("Resolved Harvey Labs path: %s", harvey_path)
     run_id = args.run_id or default_run_id(task=args.task, model=args.model)
-    agent = _build_agent(harvey_path=harvey_path, task=args.task, run_id=run_id, model=args.model)
+    system_prompt = load_system_prompt_override(args.prompts)
+    agent = _build_agent(
+        harvey_path=harvey_path, task=args.task, run_id=run_id, model=args.model, system_prompt=system_prompt
+    )
 
     agent.write_run_config(model=args.model, max_turns=args.max_turns)
     agent.prepare_workspace()
@@ -532,7 +562,10 @@ def solve_task(args: argparse.Namespace) -> None:
     harvey_path = resolve_harvey_path(args.harvey_path)
     logger.info("Resolved Harvey Labs path: %s", harvey_path)
     run_id = args.run_id or default_run_id(task=args.task, model=args.model)
-    agent = _build_agent(harvey_path=harvey_path, task=args.task, run_id=run_id, model=args.model)
+    system_prompt = load_system_prompt_override(args.prompts)
+    agent = _build_agent(
+        harvey_path=harvey_path, task=args.task, run_id=run_id, model=args.model, system_prompt=system_prompt
+    )
 
     agent.write_run_config(model=args.model, max_turns=args.max_turns)
     logger.info("Wrote run config (model=%s, max_turns=%d)", args.model, args.max_turns)
@@ -616,6 +649,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ask the OO agent to summarize the run after execution.",
     )
+    run.add_argument(
+        "--prompts",
+        help="Path to a GEPA-optimized prompt JSON (see optimize_prompt.py) with a system_prompt override.",
+    )
     run.set_defaults(func=run_task)
 
     solve = subparsers.add_parser(
@@ -632,6 +669,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary",
         action="store_true",
         help="Ask the OO agent to summarize the solved run.",
+    )
+    solve.add_argument(
+        "--prompts",
+        help="Path to a GEPA-optimized prompt JSON (see optimize_prompt.py) with a system_prompt override.",
     )
     solve.set_defaults(func=solve_task)
 

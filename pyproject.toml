@@ -8,3 +8,8 @@ dependencies = [
     "nooa>=0.0.8",
     "python-dotenv>=1.2.2",
 ]
+
+[project.optional-dependencies]
+optimize = [
+    "gepa>=0.1.4",
+]
