@@ -33,7 +33,7 @@ mkdir -p gepa_runs
 run_dir="gepa_runs/${domain}-$(date +%Y%m%d-%H%M%S)"
 log_file="${run_dir}.nohup.log"
 
-nohup uv run python optimize_prompt.py "$@" --run-dir "$run_dir" > "$log_file" 2>&1 &
+nohup uv run python -u optimize_prompt.py "$@" --run-dir "$run_dir" > "$log_file" 2>&1 &
 pid=$!
 disown
 
