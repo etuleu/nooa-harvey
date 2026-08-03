@@ -49,6 +49,8 @@ import argparse
 import asyncio
 import json
 import logging
+import shlex
+import sys
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -325,6 +327,7 @@ def build_selection_strategy(args: argparse.Namespace):
 def main() -> None:
     args = build_parser().parse_args()
     harvey_main.configure_logging(args.verbose)
+    print(f"Command: {shlex.join(sys.argv)}")
     harvey_path = harvey_main.resolve_harvey_path(args.harvey_path)
 
     if args.train_tasks or args.val_tasks:
