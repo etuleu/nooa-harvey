@@ -247,7 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-turns", type=int, default=200)
     parser.add_argument("--max-metric-calls", type=int, default=20, help="Evaluation budget (each call runs one real task).")
     parser.add_argument("--max-workers", type=int, default=1, help="Parallel evaluations. Keep low: each is a real LLM+CLI run.")
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--output",
         default=None,
