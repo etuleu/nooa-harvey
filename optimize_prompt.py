@@ -229,7 +229,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Cap the number of discovered tasks considered (deterministically sampled) before the "
         "train/val split. Use this to keep costs low and iterate quickly. Ignored when "
-        "--train-tasks/--val-tasks are given.",
+        "--train-tasks/--val-tasks are given. Mutually exclusive with --sample-fraction.",
+    )
+    parser.add_argument(
+        "--sample-fraction",
+        type=float,
+        default=None,
+        help="Cap the discovered tasks to this fraction of the total (e.g. 0.1 for 10%%), rounded to "
+        "at least 2. Deterministically sampled before the train/val split, same as --sample-tasks. "
+        "Mutually exclusive with --sample-tasks.",
     )
     parser.add_argument("--val-fraction", type=float, default=0.3, help="Fraction of discovered tasks held out for validation.")
     parser.add_argument("--model", default=harvey_main.DEFAULT_MODEL, help="Solver model run by the candidate agent.")
@@ -336,10 +344,18 @@ def main() -> None:
         train_tasks = [t.strip() for t in args.train_tasks.split(",") if t.strip()]
         val_tasks = [t.strip() for t in args.val_tasks.split(",") if t.strip()]
     else:
+        if args.sample_tasks is not None and args.sample_fraction is not None:
+            raise SystemExit("Provide only one of --sample-tasks or --sample-fraction.")
         if args.sample_tasks is not None and args.sample_tasks < 2:
             raise SystemExit("--sample-tasks must be at least 2 (need at least one train and one val task).")
+        if args.sample_fraction is not None and not (0 < args.sample_fraction <= 1):
+            raise SystemExit("--sample-fraction must be in (0, 1].")
         discovered = discover_tasks(harvey_path, args.domain)
-        sampled = sample_tasks(discovered, args.sample_tasks, args.seed)
+        sample_size = args.sample_tasks
+        if args.sample_fraction is not None:
+            sample_size = max(2, round(len(discovered) * args.sample_fraction))
+            print(f"--sample-fraction {args.sample_fraction} of {len(discovered)} discovered tasks -> sample_size={sample_size}")
+        sampled = sample_tasks(discovered, sample_size, args.seed)
         train_tasks, val_tasks = split_train_val(sampled, args.val_fraction, args.seed)
 
     seed_candidate = build_seed_candidate()
