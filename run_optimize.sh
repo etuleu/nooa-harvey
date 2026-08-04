@@ -29,15 +29,19 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   fi
 done
 
-mkdir -p gepa_runs
-run_dir="gepa_runs/${domain}-$(date +%Y%m%d-%H%M%S)"
+# Resolve paths relative to this script's own directory (the repo root), not the
+# caller's cwd, and make run_dir absolute so a long background run can't be broken
+# by any later cwd change or transient relative-path resolution hiccup.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mkdir -p "$repo_root/gepa_runs"
+run_dir="$repo_root/gepa_runs/${domain}-$(date +%Y%m%d-%H%M%S)"
 log_file="${run_dir}.nohup.log"
 
 nohup uv run python -u optimize_prompt.py "$@" --run-dir "$run_dir" > "$log_file" 2>&1 &
 pid=$!
 disown
 
-echo "$run_dir" > gepa_runs/last_run_dir.txt
+echo "$run_dir" > "$repo_root/gepa_runs/last_run_dir.txt"
 
 echo "Started PID $pid"
 echo "Run dir:     $run_dir"
