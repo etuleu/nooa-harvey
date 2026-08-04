@@ -164,7 +164,7 @@ The solving loop is implemented entirely as methods on the NOOA agent class `Har
 - `glob(pattern)` — lists workspace-relative files matching a glob pattern
 - `grep(pattern, path=".")` — regex-searches file contents (including `.docx`) and returns matching lines
 - `bash(command)` — runs a shell command with the workspace as cwd
-- `task_context()` — returns the task title, instructions, deliverables, and criteria count
+- `task_context()` — returns the task title, instructions, and deliverables
 
 The agentic method `solve_harvey_task()` is the entrypoint: its docstring instructs the model to call these tools to inspect the task and produce every required deliverable under `output/`.
 

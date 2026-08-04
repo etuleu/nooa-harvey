@@ -113,16 +113,14 @@ class HarveyBenchmarkAgent(Agent):
         return json.loads(task_json_path.read_text(encoding="utf-8"))
 
     def task_context(self) -> dict[str, object]:
-        """Return the task title, instructions, required deliverables, and criteria count."""
+        """Return the task title, instructions, and required deliverables."""
         task_json = self.load_task_json()
-        criteria = task_json.get("criteria", [])
         return {
             "title": task_json.get("title"),
             "task_id": self.task,
             "work_type": task_json.get("work_type"),
             "instructions": task_json.get("instructions"),
             "deliverables": task_json.get("deliverables", {}),
-            "criteria_count": len(criteria) if isinstance(criteria, list) else 0,
         }
 
     def results_dir(self) -> Path:

@@ -12,8 +12,8 @@ Only the agent's system prompt is optimized:
                         time via MRO by nooa's Agent._resolve_system_prompt).
 
 The task instructions themselves are not a tunable candidate: they come from the
-Harvey task's own task_context() (title, work_type, deliverables, criteria) and
-cannot be changed.
+Harvey task's own task_context() (title, work_type, deliverables) and cannot be
+changed.
 
 Each evaluation actually runs the agent end-to-end against a real Harvey Labs task
 (read/write/edit/glob/grep/bash tool calls against LLM(s)), then shells out to
@@ -84,7 +84,7 @@ instructions.
 The agent has these tools, scoped to a per-run workspace with a read-only
 documents/ tree (mirroring the task's source documents) and a writable output/
 directory:
-  - task_context() -> title, instructions, work_type, deliverables, criteria_count
+  - task_context() -> title, instructions, work_type, deliverables
   - read(path) -> reads a text file, or auto-extracts text from a .docx
   - write(path, content) -> writes a text file, or auto-generates a real .docx if
     the path ends in .docx
@@ -146,7 +146,12 @@ def split_train_val(task_ids: list[str], val_fraction: float, seed: int) -> tupl
     return shuffled[n_val:], shuffled[:n_val]
 
 
-def build_seed_candidate() -> str:
+def build_seed_candidate(seed_prompts: str | None = None) -> str:
+    if seed_prompts:
+        system_prompt = harvey_main.load_system_prompt_override(seed_prompts)
+        if not system_prompt:
+            raise RuntimeError(f"Could not read a usable system_prompt from {seed_prompts}")
+        return system_prompt
     system_prompt = harvey_main.HarveyBenchmarkAgent.__doc__ or ""
     if not system_prompt:
         raise RuntimeError("Could not read seed system prompt from HarveyBenchmarkAgent")
@@ -256,6 +261,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dry-run", action="store_true", help="Print the plan (tasks, seed prompts) and exit without optimizing.")
     parser.add_argument(
+        "--seed-prompts",
+        help="Path to a previous optimized_prompts_<domain>_<timestamp>.json (see this script's own "
+        "output, or main.py's --prompts) to use as the starting candidate instead of "
+        "HarveyBenchmarkAgent's hardcoded docstring. Use this to start a fresh, separate run "
+        "(new --run-dir/candidate history) that builds on a previous run's best result. To "
+        "instead continue the *same* optimization trajectory, pass the previous run's own "
+        "--run-dir again -- GEPA auto-resumes from its saved gepa_state.bin.",
+    )
+    parser.add_argument(
         "--display-progress-bar",
         action="store_true",
         help="Show a live tqdm progress bar over evaluation rollouts while optimizing.",
@@ -358,7 +372,7 @@ def main() -> None:
         sampled = sample_tasks(discovered, sample_size, args.seed)
         train_tasks, val_tasks = split_train_val(sampled, args.val_fraction, args.seed)
 
-    seed_candidate = build_seed_candidate()
+    seed_candidate = build_seed_candidate(args.seed_prompts)
 
     print(f"Harvey path:   {harvey_path}")
     print(f"Train tasks ({len(train_tasks)}): {train_tasks}")
