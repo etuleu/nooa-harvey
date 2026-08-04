@@ -304,20 +304,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--selection-strategy",
-        choices=["all", "best", "top-k"],
+        choices=["all", "best", "top-k", "weakest"],
         default="all",
         help="Which proposals to keep after a multi-task sampling iteration. 'all' (default): keep "
         "every proposal that improves on its parent. 'best': keep only the single best-improving "
-        "proposal. 'top-k': keep the top --selection-k by improvement margin.",
+        "proposal. 'top-k': keep the top --selection-k by improvement margin (sum of subsample score "
+        "deltas). 'weakest': keep the top --selection-k by *worst-case* per-task subsample score "
+        "delta instead of the sum -- favors candidates that improve broadly across the sampled "
+        "tasks over ones that post a big aggregate gain by excelling narrowly on one task while "
+        "regressing on others (i.e. against overfitting to the sampled minibatch; see Bennett 2023, "
+        "'The Optimal Choice of Hypothesis Is the Weakest, Not the Shortest', arXiv:2301.12987).",
     )
     parser.add_argument(
         "--selection-k",
         type=int,
         default=2,
-        help="Number of proposals to keep with --selection-strategy top-k.",
+        help="Number of proposals to keep with --selection-strategy top-k/weakest.",
     )
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser
+
+
+class WeakestHypothesis:
+    """Selection strategy favoring broadly-generalizing proposals over narrowly-overfit ones.
+
+    Inspired by Bennett (2023), "The Optimal Choice of Hypothesis Is the Weakest, Not the
+    Shortest" (arXiv:2301.12987): a hypothesis is more likely to generalize the more
+    situations it's compatible with (its "weakness"/extension), not the one that merely
+    best explains what's already been observed. GEPA's default rankings (sum of subsample
+    score deltas across the sampled minibatch) can be dominated by a candidate that posts a
+    large gain on one sampled task while regressing on others -- a hypothesis "strong"
+    (narrowly tailored) enough to explain that one task well, but not broadly applicable.
+
+    This ranks candidates by their *worst* per-task subsample score delta instead of the
+    sum, so a proposal only ranks highly if its improvement holds up across every task it
+    was tested on, not just on average.
+    """
+
+    def __init__(self, k: int):
+        self.k = k
+
+    def select(self, proposals, state, acceptance_criterion):
+        passing = []
+        for p in proposals:
+            if not acceptance_criterion.should_accept(p, state):
+                continue
+            before = p.subsample_scores_before or []
+            after = p.subsample_scores_after or []
+            deltas = [a - b for a, b in zip(after, before)]
+            worst_delta = min(deltas) if deltas else float("-inf")
+            passing.append((worst_delta, p))
+        passing.sort(key=lambda x: x[0], reverse=True)
+        return [p for _, p in passing[: self.k]]
 
 
 def build_sampling_strategy(args: argparse.Namespace):
@@ -343,6 +381,8 @@ def build_selection_strategy(args: argparse.Namespace):
         return BestImprovement()
     if args.selection_strategy == "top-k":
         return TopKImprovements(args.selection_k)
+    if args.selection_strategy == "weakest":
+        return WeakestHypothesis(args.selection_k)
     raise ValueError(f"Unknown --selection-strategy: {args.selection_strategy}")
 
 
