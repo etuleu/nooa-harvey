@@ -1,6 +1,6 @@
 # nooa-harvey
 
-Simple OO-agent script (built with [NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents)) that runs the Harvey task-solving loop inside the agent.
+Simple OO-agent script (built with [NOOA](https://github.com/NVIDIA-NeMo/labs-OO-Agents)) that runs the [Harvey](https://github.com/harveyai/harvey-labs) task-solving loop inside the agent.
 
 ## Prerequisites
 
